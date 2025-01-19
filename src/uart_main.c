@@ -12,6 +12,7 @@ const uint32_t UARTS_FIFO[] = {  UART0_FIFO, UART1_FIFO, UART2_FIFO  };
 const uint32_t UARTS_DIS_INT[] = { UART0_INTERRUPT_DISABLE, UART1_INTERRUPT_DISABLE, UART2_INTERRUPT_DISABLE  };
 const uint32_t ETS_UARTS[] = {  ETS_UART0_INTR_SOURCE, ETS_UART1_INTR_SOURCE, ETS_UART2_INTR_SOURCE  };
 const uint32_t UARTS_ENB_INT[] = {  UART0_INTERRUPT_ENABLE, UART1_INTERRUPT_ENABLE, UART2_INTERRUPT_ENABLE  };
+const uint32_t UARTS_INT_ST[] = {  UART0_INT_ST, UART1_INT_ST, UART2_INT_ST  };
 
 // to avoid dynamic allocation hassles, we will make the buffer presist throught the whole program
 static RingBuffer *ring_buffer;
@@ -20,7 +21,7 @@ static uint8_t *buffer = NULL;
 bool is_data_available_uart(uint8_t UART_NUM) {
   // checks if the first bit is there in the UART Interrupt register
   // the bit is set if data is available
-  return (READ_REG(UARTS_ENB_INT[UART_NUM]) & (1 << 0)) != 0;
+  return (READ_REG(UARTS_INT_ST[UART_NUM]) & (1 << 0)) != 0;
 }
 
 static UART_INPUT uart_input_ = { .UART_NUM = 0, .data = NULL, .length = 0 };
@@ -28,16 +29,20 @@ static UART_INPUT uart_input_ = { .UART_NUM = 0, .data = NULL, .length = 0 };
 void uart_send(uint8_t UART_NUM, char* data) {
   // change the values of data sent
   uart_input_.UART_NUM = UART_NUM;
-  uart_input_.data = data;
   uart_input_.length = strlen(data);
-
-  // enable the TX FIFO WRITE interrupt
-  WRITE_REG(UARTS_FIFO[UART_NUM], (1 << 1));
+  uart_input_.data = data;
+  
+  // clean the register and trigger the TX FIFO WRITE interrupt
+  WRITE_REG(UARTS_ENB_INT[UART_NUM], 0);
+  WRITE_REG(UARTS_ENB_INT[UART_NUM], (1 << 1));
 }
 
 void uart_read(uint8_t UART_NUM) {
-  // enable the FIFO RX interrupt
-  WRITE_REG(UARTS_FIFO[UART_NUM], (1 << 0));
+  // trigger the FIFO RX interrupt
+  WRITE_REG(UARTS_ENB_INT[UART_NUM], (1 << 0));
+  uint8_t* data;
+  read_ring_buffer(ring_buffer, data);
+  printf("%s", (char*)data);
 }
 
 void IRAM_ATTR uart_isr(void* arg) {
@@ -46,7 +51,7 @@ void IRAM_ATTR uart_isr(void* arg) {
   // get uart number from arg
   uint8_t UART_NUM = uart_input->UART_NUM;
   // read the interrupt status to see if its a write or read
-  uint32_t status = READ_REG(UARTS_ENB_INT[UART_NUM]);
+  uint32_t status = READ_REG(UARTS_INT_ST[UART_NUM]);
 
   // if RX FIFO FUll interrupt is enabled, continue
   if (status & (1 << 0)) {
@@ -54,44 +59,32 @@ void IRAM_ATTR uart_isr(void* arg) {
     while (is_data_available_uart(UART_NUM)) {
       // read data in the register and clear the reserved bits
       uint8_t data = READ_REG(UARTS_FIFO[UART_NUM]) & 0xFF;
-      if (!is_ring_buffer_empty(ring_buffer)) {
-        // save the data where the write index points to in the buffer
-        ring_buffer->buffer[ring_buffer->write_index] = data;
-        // increment the write index by one and mask the index
-        ring_buffer->write_index = ring_buffer->write_index + 1 & ring_buffer->mask;
-      } else {
-        // if ring buffer is full, overwrite the old data
-        ring_buffer->write_index = ring_buffer->write_index + 1 & ring_buffer->mask;
-      }
+      // write the data into the ring buffer so we can read it later
+      write_ring_buffer(ring_buffer, data);
     }
-
-    WRITE_REG(UARTS_DIS_INT[UART_NUM], 1 >> 0);
   }
 
   // if TX FIFO EMPTY interrupt is enabled, continue
   if (status & (1 << 1)) {
     // get the data from uart_input
-    uint8_t* data = uart_input->data;
-    // while the tx empty interrupt is enabled and ring buffer is not empty
-    while ((READ_REG(UARTS_ENB_INT[UART_NUM]) & (1 << 1)) && !is_ring_buffer_empty(ring_buffer)) {
-      // write data to the fifo register at the position that the write index points at
-      WRITE_REG(UARTS_FIFO[UART_NUM], ring_buffer->buffer[ring_buffer->write_index]);
-      // increment the write index
-      ring_buffer->write_index = (ring_buffer->write_index + 1) & ring_buffer->mask;
-    }
+    char* data = uart_input_.data;
 
     // write user data using UART
     // check if the interrupt is enabled
-    while (uart_input->length > 0 && (READ_REG(UARTS_ENB_INT[UART_NUM]) & (1 << 1))) {
+    while (uart_input_.length > 0 && (READ_REG(UARTS_ENB_INT[UART_NUM]) & (1 << 1))) {
       // go through the data and write it the FIFO register
-      WRITE_REG(UARTS_FIFO[UART_NUM], *uart_input->data); // must derefrence the data before sending
-      uart_input->length--;
-      uart_input->data++;
+      WRITE_REG(UARTS_FIFO[UART_NUM], *data); // must derefrence the data before sending
+      uart_input_.length--;
+      data++;
     }
 
-    if (is_ring_buffer_empty(ring_buffer)) 
+    if (uart_input_.length == 0) {
       WRITE_REG(UARTS_DIS_INT[UART_NUM], (1 << 1));
     }
+  }
+  // clear interrupts so they won't retrigger
+  WRITE_REG(UARTS_DIS_INT[UART_NUM], 1 >> 0);
+  WRITE_REG(UARTS_DIS_INT[UART_NUM], (1 << 1));
 }
 
 void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_NUM) {

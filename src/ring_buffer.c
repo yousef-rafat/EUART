@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stdbool.h>
 #include "ring_buffer.h"
 
 void setup_ring_buffer(RingBuffer* ring_buffer, uint8_t* buffer, uint8_t buffer_size) {

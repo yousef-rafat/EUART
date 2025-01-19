@@ -18,5 +18,6 @@ typedef struct {
 void setup_ring_buffer(RingBuffer* ring_buffer, uint8_t* buffer, uint8_t buffer_size);
 bool is_ring_buffer_empty(RingBuffer* ring_buffer);
 bool read_ring_buffer(RingBuffer* ring_buffer, uint8_t* data);
+bool write_ring_buffer(RingBuffer* ring_buffer, uint8_t data);
 
 #endif

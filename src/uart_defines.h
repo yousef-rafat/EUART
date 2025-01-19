@@ -33,6 +33,11 @@
 #define UART1_FIFO 0x3FF50000
 #define UART2_FIFO 0x3FF6E000
 
+// UART interrupt status registers
+#define UART0_INT_ST (UART0_BASE + 0x08)
+#define UART1_INT_ST (UART1_BASE + 0x08)
+#define UART2_INT_ST (UART2_BASE + 0x08)
+
 // Register handling
 #define READ_REG(addr) (*(volatile uint32_t*)(addr))
 #define WRITE_REG(addr, value) (*(volatile uint32_t*)(addr) = (value))
@@ -55,7 +60,7 @@ struct uart_settings {
 
 typedef struct {
   uint8_t UART_NUM;
-  uint8_t* data;
+  char* data;
   uint16_t length;
 } UART_INPUT;
 
