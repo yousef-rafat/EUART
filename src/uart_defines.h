@@ -70,7 +70,7 @@ extern "C" {
 
 void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_NUM);
 void uart_send(uint8_t UART_NUM, char* data);
-
+void uart_read(uint8_t UART_NUM);
 #ifdef __cplusplus
 }
 #endif

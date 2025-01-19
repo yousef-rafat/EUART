@@ -7,6 +7,8 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include <stdio.h>
+#include <cstring>
+#include "Arduino.h"
 
 const uint32_t UARTS_FIFO[] = {  UART0_FIFO, UART1_FIFO, UART2_FIFO  };
 const uint32_t UARTS_DIS_INT[] = { UART0_INTERRUPT_DISABLE, UART1_INTERRUPT_DISABLE, UART2_INTERRUPT_DISABLE  };
@@ -27,64 +29,38 @@ bool is_data_available_uart(uint8_t UART_NUM) {
 static UART_INPUT uart_input_ = { .UART_NUM = 0, .data = NULL, .length = 0 };
 
 void uart_send(uint8_t UART_NUM, char* data) {
-  // change the values of data sent
-  uart_input_.UART_NUM = UART_NUM;
-  uart_input_.length = strlen(data);
-  uart_input_.data = data;
-  
-  // clean the register and trigger the TX FIFO WRITE interrupt
-  WRITE_REG(UARTS_ENB_INT[UART_NUM], 0);
-  WRITE_REG(UARTS_ENB_INT[UART_NUM], (1 << 1));
+
+  uint8_t length = strlen(data);
+  while (length > 0) {
+      // go through the data and write it the FIFO register
+      WRITE_REG(UARTS_FIFO[UART_NUM], *data); // must derefrence the data before sending
+      length--;
+      data++;
+    }
 }
 
 void uart_read(uint8_t UART_NUM) {
   // trigger the FIFO RX interrupt
   WRITE_REG(UARTS_ENB_INT[UART_NUM], (1 << 0));
-  uint8_t* data;
+  uint8_t data[256];
   read_ring_buffer(ring_buffer, data);
   printf("%s", (char*)data);
 }
 
-void IRAM_ATTR uart_isr(void* arg) {
-  // For esp32, there's only one interrupt for each UART. We will have both read and write interrupts here
-  UART_INPUT* uart_input = (UART_INPUT*)arg;
+void IRAM_ATTR uart_isr(void *arg) {
   // get uart number from arg
-  uint8_t UART_NUM = uart_input->UART_NUM;
-  // read the interrupt status to see if its a write or read
-  uint32_t status = READ_REG(UARTS_INT_ST[UART_NUM]);
-
+  Serial.begin(115200);
+  Serial.write("hello");
+  uint8_t UART_NUM = *(uint8_t*)arg;
   // if RX FIFO FUll interrupt is enabled, continue
-  if (status & (1 << 0)) {
-
-    while (is_data_available_uart(UART_NUM)) {
-      // read data in the register and clear the reserved bits
-      uint8_t data = READ_REG(UARTS_FIFO[UART_NUM]) & 0xFF;
-      // write the data into the ring buffer so we can read it later
-      write_ring_buffer(ring_buffer, data);
-    }
-  }
-
-  // if TX FIFO EMPTY interrupt is enabled, continue
-  if (status & (1 << 1)) {
-    // get the data from uart_input
-    char* data = uart_input_.data;
-
-    // write user data using UART
-    // check if the interrupt is enabled
-    while (uart_input_.length > 0 && (READ_REG(UARTS_ENB_INT[UART_NUM]) & (1 << 1))) {
-      // go through the data and write it the FIFO register
-      WRITE_REG(UARTS_FIFO[UART_NUM], *data); // must derefrence the data before sending
-      uart_input_.length--;
-      data++;
-    }
-
-    if (uart_input_.length == 0) {
-      WRITE_REG(UARTS_DIS_INT[UART_NUM], (1 << 1));
-    }
+  while (is_data_available_uart(UART_NUM)) {
+    // read data in the register and clear the reserved bits
+    uint8_t data = READ_REG(UARTS_FIFO[UART_NUM]) & 0xFF;
+    // write the data into the ring buffer so we can read it later
+    write_ring_buffer(ring_buffer, data);
   }
   // clear interrupts so they won't retrigger
   WRITE_REG(UARTS_DIS_INT[UART_NUM], 1 >> 0);
-  WRITE_REG(UARTS_DIS_INT[UART_NUM], (1 << 1));
 }
 
 void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_NUM) {
@@ -93,7 +69,7 @@ void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_
     printf("Error: UART settings cannot be NULL.");
     return;
   }
-
+  
   // check if the clock was set by the user or not. Otherwise defaults to 80MH
   uint32_t clock_freq = settings->esp_clock_freq ? settings->esp_clock_freq : (80 * 1000000);
   // the division sets the UART clock rate to match the baud rate of transmission
@@ -209,3 +185,4 @@ void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_
   }
 
 }
+
