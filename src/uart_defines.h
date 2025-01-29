@@ -33,10 +33,10 @@
 #define UART1_FIFO 0x3FF50000
 #define UART2_FIFO 0x3FF6E000
 
-// UART interrupt status registers
-#define UART0_INT_ST (UART0_BASE + 0x08)
-#define UART1_INT_ST (UART1_BASE + 0x08)
-#define UART2_INT_ST (UART2_BASE + 0x08)
+// UART RAW interrupt status registers
+#define UART0_INT_ST (UART0_BASE + 0x04)
+#define UART1_INT_ST (UART1_BASE + 0x04)
+#define UART2_INT_ST (UART2_BASE + 0x04)
 
 // Register handling
 #define READ_REG(addr) (*(volatile uint32_t*)(addr))
@@ -44,6 +44,24 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "packet.h"
+
+// define the default settings
+#define DEFAULT_CONFIG                              \
+{                                                   \
+    .hardware_flow_control = false,                 \
+    .software_flow_control = false,                 \
+    .parity = false,                                \
+    .data_bits = 8,                                 \
+    .stop_bits = 1,                                 \
+    .invert_pins = false,                           \
+    .ring_buffer_size = 32,                         \
+    .parity_check_mode = 0, /* 0: Even parity */    \
+    .loopback_mode = false,                         \
+    .esp_clock_freq = (80 * 1000000),               \
+    .rx_threshold = 1,                              \
+    .use_packets = true                             \
+}
 
 struct uart_settings {
   bool hardware_flow_control;
@@ -56,6 +74,8 @@ struct uart_settings {
   bool parity_check_mode;
   bool loopback_mode;
   uint32_t esp_clock_freq;
+  uint8_t rx_threshold;
+  bool use_packets;
 };
 
 typedef struct {
@@ -69,8 +89,13 @@ extern "C" {
 #endif
 
 void init_uart(uint32_t baud_rate, struct uart_settings* settings, uint8_t UART_NUM);
-void uart_send(uint8_t UART_NUM, char* data);
-void uart_read(uint8_t UART_NUM);
+void uart_send(uint8_t UART_NUM, const char* data);
+void send_packet(uint8_t UART_NUM, const char* str);
+uint8_t uart_read(uint8_t UART_NUM);
+bool is_data_available_uart(uint8_t UART_NUM);
+void read_packet(uart_packet *packet); // from packet.h
+uart_packet* read_pack(uint8_t UART_NUM);
+
 #ifdef __cplusplus
 }
 #endif

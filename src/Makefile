@@ -5,7 +5,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -g
 
 # source files
-SRCS = uart_defines.c ring_buffer.c
+SRCS = uart_defines.c ring_buffer.c packet.c
 
 # object files
 OBJS = $(SRCS:.c=.o)
